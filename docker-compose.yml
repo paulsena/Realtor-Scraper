@@ -1,0 +1,45 @@
+services:
+  caddy:
+    image: caddy:latest
+    ports:
+      - "443:443"
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+    restart: unless-stopped
+
+  app:
+    build: .
+    expose:
+      - "3000"
+    env_file: .env
+    volumes:
+      - scraper_data:/app/data
+    ipc: host
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    expose:
+      - "9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  scraper_data:
+  prometheus_data:
+  grafana_data:

@@ -1,0 +1,12 @@
+node_modules
+dist
+.env
+.git
+.gitignore
+*.md
+.claude
+grafana
+prometheus
+docker-compose.yml
+Caddyfile
+vitest.config.ts

@@ -1,0 +1,183 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Scrape Success Rate by Site",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (site) (rate(scrape_requests_total{status=\"success\"}[5m])) / sum by (site) (rate(scrape_requests_total{status!=\"cached\"}[5m]))",
+          "legendFormat": "{{site}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Scrape Duration Percentiles by Site",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (site, le) (rate(scrape_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{site}} p50",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.90, sum by (site, le) (rate(scrape_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{site}} p90",
+          "refId": "B"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (site, le) (rate(scrape_duration_seconds_bucket[5m])))",
+          "legendFormat": "{{site}} p99",
+          "refId": "C"
+        }
+      ]
+    },
+    {
+      "title": "Blocked / Timeout Rate by Site",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum by (site) (rate(scrape_requests_total{status=\"blocked\"}[5m]))",
+          "legendFormat": "{{site}} blocked",
+          "refId": "A"
+        },
+        {
+          "expr": "sum by (site) (rate(scrape_requests_total{status=\"timeout\"}[5m]))",
+          "legendFormat": "{{site}} timeout",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Cache Hit Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(scrape_requests_total{status=\"cached\"}[5m])) / sum(rate(scrape_requests_total[5m]))",
+          "legendFormat": "cache hit rate",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Context Pool Size",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "context_pool_size",
+          "legendFormat": "{{site}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Active Scrapes",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "short" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "active_scrapes",
+          "legendFormat": "active",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "title": "Process Memory",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "bytes" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "process_resident_memory_bytes{job=\"scraper\"}",
+          "legendFormat": "RSS",
+          "refId": "A"
+        },
+        {
+          "expr": "nodejs_heap_size_used_bytes{job=\"scraper\"}",
+          "legendFormat": "Heap Used",
+          "refId": "B"
+        }
+      ]
+    },
+    {
+      "title": "Process CPU",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "PBFA97CFB590B2093" },
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit" },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"scraper\"}[5m])",
+          "legendFormat": "CPU usage",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["scraper"],
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Realtor Scraper",
+  "uid": "realtor-scraper",
+  "version": 1
+}
