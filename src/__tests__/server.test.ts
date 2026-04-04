@@ -4,6 +4,7 @@ import { loadConfig } from '../config.js';
 import { initDatabase } from '../cache/db.js';
 import { Cache } from '../cache/cache.js';
 import { initHouseValueRoute } from '../routes/house-value.js';
+import { ScraperService } from '../services/scraper-service.js';
 import type { Config } from '../config.js';
 import type express from 'express';
 
@@ -14,10 +15,13 @@ beforeAll(() => {
   process.env['API_KEY'] = 'test-api-key';
   config = loadConfig();
   app = createApp(config);
-  // Wire up an in-memory cache so house-value route doesn't 500
   const db = initDatabase(':memory:');
   const cache = new Cache(db, 14);
-  initHouseValueRoute(cache, null as never);
+  const service = new ScraperService(cache, null as never, [], {
+    scrapeTimeoutMs: 5000,
+    requestTimeoutMs: 10000,
+  });
+  initHouseValueRoute(service);
 });
 
 async function request(
