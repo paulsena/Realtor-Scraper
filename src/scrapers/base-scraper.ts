@@ -32,7 +32,10 @@ const COOKIE_BANNER_SELECTORS = [
 
 export interface ScraperSelectors {
   readonly searchBox: string;
-  readonly autocompleteResult: string;
+  /** Paste-and-submit strategy: fill the box then click this button. Takes priority over autocompleteResult. */
+  readonly submitButton?: string;
+  /** Autocomplete strategy: type char-by-char, wait for dropdown, click first result. Used when submitButton is absent. */
+  readonly autocompleteResult?: string;
   readonly priceSelector: string;
 }
 
@@ -123,11 +126,21 @@ export abstract class BaseScraper implements Scraper {
           throw err;
         }
       } else {
-        // Autocomplete strategy: type address in search box and pick first suggestion
-        this.logger.info({ site, address }, 'Typing address into search box');
+        // Search form strategy
+        this.logger.info({ site, address }, 'Filling address into search box');
         try {
           await humanClick(page, this.selectors.searchBox);
-          await humanType(page, this.selectors.searchBox, address);
+          if (this.selectors.submitButton) {
+            // Paste-and-submit: fill the entire address at once, then click the button
+            await gaussianDelay(page, 300, 80);
+            await page.fill(this.selectors.searchBox, address);
+            await gaussianDelay(page, 500, 100);
+            this.logger.info({ site, address }, 'Clicking submit button');
+            await humanClick(page, this.selectors.submitButton);
+          } else {
+            // Autocomplete: type character by character, pick first suggestion
+            await humanType(page, this.selectors.searchBox, address);
+          }
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
           const diag = await this.getPageDiagnostics(page);
@@ -139,25 +152,27 @@ export abstract class BaseScraper implements Scraper {
           throw err;
         }
 
-        this.logger.info({ site, address }, 'Waiting for autocomplete results');
-        try {
-          await page.waitForSelector(this.selectors.autocompleteResult, {
-            timeout: 8000,
-          });
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          const diag = await this.getPageDiagnostics(page);
-          const selectorProbe = await this.probeSelector(page, this.selectors.autocompleteResult);
-          this.logger.error(
-            { site, address, err: msg, selector: this.selectors.autocompleteResult, selectorProbe, ...diag },
-            'DIAG: Autocomplete did not appear — selector outdated or search typed incorrectly',
-          );
-          throw err;
-        }
-        await gaussianDelay(page, 800, 200);
+        if (!this.selectors.submitButton && this.selectors.autocompleteResult) {
+          this.logger.info({ site, address }, 'Waiting for autocomplete results');
+          try {
+            await page.waitForSelector(this.selectors.autocompleteResult, {
+              timeout: 8000,
+            });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            const diag = await this.getPageDiagnostics(page);
+            const selectorProbe = await this.probeSelector(page, this.selectors.autocompleteResult);
+            this.logger.error(
+              { site, address, err: msg, selector: this.selectors.autocompleteResult, selectorProbe, ...diag },
+              'DIAG: Autocomplete did not appear — selector outdated or search typed incorrectly',
+            );
+            throw err;
+          }
+          await gaussianDelay(page, 800, 200);
 
-        this.logger.info({ site, address }, 'Clicking first autocomplete result');
-        await humanClick(page, this.selectors.autocompleteResult);
+          this.logger.info({ site, address }, 'Clicking first autocomplete result');
+          await humanClick(page, this.selectors.autocompleteResult);
+        }
 
         this.logger.info({ site, address }, 'Waiting for property page to load');
         try {

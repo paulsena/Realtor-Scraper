@@ -44,7 +44,7 @@ export class ZillowScraper extends BaseScraper {
   constructor(logger?: pino.Logger) {
     super(logger);
   }
-  readonly landingUrl = 'https://www.zillow.com/';
+  readonly landingUrl = 'https://www.zillow.com/how-much-is-my-home-worth/';
   protected readonly selectors: ScraperSelectors = {
     searchBox: SELECTORS.searchBox,
     autocompleteResult: SELECTORS.autocompleteResult,

@@ -68,14 +68,14 @@ export async function humanClick(
 }
 
 /**
- * Navigate to a URL with a Google referrer header.
+ * Navigate to a URL via a Google hop so document.referrer is authentically set.
+ * Visits google.com first (domcontentloaded only — fast), then navigates to the target.
  */
 export async function navigateWithReferrer(
   page: Page,
   url: string,
 ): Promise<void> {
-  await page.setExtraHTTPHeaders({
-    Referer: 'https://www.google.com/',
-  });
-  await page.goto(url);
+  await page.goto('https://www.google.com/', { waitUntil: 'domcontentloaded', timeout: 10000 });
+  await gaussianDelay(page, 700, 150);
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
 }

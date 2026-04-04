@@ -38,7 +38,7 @@ export class RedfinScraper extends BaseScraper {
   readonly landingUrl = 'https://www.redfin.com/what-is-my-home-worth';
   protected readonly selectors: ScraperSelectors = {
     searchBox: SELECTORS.searchBox,
-    autocompleteResult: SELECTORS.autocompleteResult,
+    submitButton: 'button:has-text("Next"), button[data-rf-test-id="submit-button"], button[type="submit"]',
     priceSelector: SELECTORS.price,
   };
 

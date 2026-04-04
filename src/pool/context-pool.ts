@@ -151,7 +151,9 @@ export class ContextPool {
     if (!url) return;
     try {
       const page = await entry.context.newPage();
-      await page.setExtraHTTPHeaders({ Referer: 'https://www.google.com/' });
+      // Google hop first — sets document.referrer authentically in JS
+      await page.goto('https://www.google.com/', { waitUntil: 'domcontentloaded', timeout: 10000 });
+      await page.waitForTimeout(500 + Math.floor(Math.random() * 500));
       await page.goto(url, { waitUntil: 'domcontentloaded' });
       entry.landingPage = page;
     } catch {

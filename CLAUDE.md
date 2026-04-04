@@ -5,8 +5,8 @@
 Standalone diagnostic scripts live in `scraper-debug/`. Run them directly with `npx tsx`:
 
 ```bash
-npx tsx scraper-debug/redfin-myhome.ts       # full Redfin flow test
-npx tsx scraper-debug/redfin-price-sel.ts    # discover price DOM selectors
+npx tsx scraper-debug/redfin-myhome.ts    # full Redfin flow test (paste+Next, price selector probe)
+npx tsx scraper-debug/zillow-myhome.ts    # Zillow SEO page test (paste+Get started, price selector probe)
 ```
 
 Edit the hardcoded address at the bottom of each file before running. These use the same stealth stack as the real scrapers (`createStealthContext`, `navigateWithReferrer`, etc.) so results reflect real bot-detection behavior.
