@@ -1,5 +1,8 @@
 # realtor-scraper
 
+> [!WARNING]
+> **Disclaimer:** This project is provided for educational and research purposes only. The author is not liable for any misuse of this software or any consequences resulting from its use. Scraping real estate portals is almost certainly against the Terms of Service (TOS) of the respective websites. Use at your own risk.
+
 A self-hosted API that scrapes house price estimates from Zillow, Redfin, and Realtor.com. Accepts an address and returns estimated values from each site's proprietary algorithm.
 
 Designed for low-volume personal use (1-3 concurrent users). Runs on Oracle Cloud free tier via Docker Compose.
