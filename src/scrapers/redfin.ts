@@ -4,13 +4,15 @@ import type { ScrapeResult } from './types.js';
 import type pino from 'pino';
 
 const SELECTORS = {
-  searchBox: 'input#search-box-input, input[data-rf-test-id="search-input"], #homepageSearchBox input',
+  // My Home Value page has a dedicated "Enter your address" input
+  searchBox: 'input[placeholder="Enter your address"], input#search-box-input',
   autocompleteResult:
     '.item-row.clickable >> nth=0',
+  // My Home Value estimate page price
   price:
-    '.statsValue [data-rf-test-id="avm-price"], .HomeInfoV2 .price, .EstimateSection .value',
+    '.AvmSection .price, [data-rf-test-name="avmValue"], .statsValue [data-rf-test-id="avm-price"], .HomeInfoV2 .price',
   redfinEstimate:
-    '[data-rf-test-id="avm-price"], .redfin-avm-price, .avm-price',
+    '.AvmSection .price, [data-rf-test-name="avmValue"], [data-rf-test-id="avm-price"], .redfin-avm-price, .avm-price',
   beds: '.HomeInfoV2 .beds, [data-rf-test-id="abp-beds"] .statsValue, .home-main-stats-variant span:has(.bp-bed)',
   baths:
     '.HomeInfoV2 .baths, [data-rf-test-id="abp-baths"] .statsValue, .home-main-stats-variant span:has(.bp-bath)',
@@ -31,7 +33,9 @@ export class RedfinScraper extends BaseScraper {
   constructor(logger?: pino.Logger) {
     super(logger);
   }
-  readonly landingUrl = 'https://www.redfin.com/';
+  // Use the My Home Value page — its autocomplete API is NOT blocked by CloudFront
+  // unlike the regular homepage search which uses the blocked /stingray/do/location-autocomplete
+  readonly landingUrl = 'https://www.redfin.com/what-is-my-home-worth';
   protected readonly selectors: ScraperSelectors = {
     searchBox: SELECTORS.searchBox,
     autocompleteResult: SELECTORS.autocompleteResult,

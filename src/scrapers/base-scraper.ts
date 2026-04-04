@@ -94,55 +94,86 @@ export abstract class BaseScraper implements Scraper {
         return { status: 'blocked', error: 'Bot detection triggered on landing page' };
       }
 
-      this.logger.info({ site, address }, 'Typing address into search box');
-      try {
-        await humanClick(page, this.selectors.searchBox);
-        await humanType(page, this.selectors.searchBox, address);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const diag = await this.getPageDiagnostics(page);
-        const selectorProbe = await this.probeSelector(page, this.selectors.searchBox);
-        this.logger.error(
-          { site, address, err: msg, selector: this.selectors.searchBox, selectorProbe, ...diag },
-          'DIAG: Failed to interact with search box — selector likely outdated',
-        );
-        throw err;
-      }
+      const directUrl = this.getDirectPropertyUrl(address);
+      if (directUrl) {
+        // Direct URL strategy: navigate straight to the property page
+        this.logger.info({ site, address, url: directUrl }, 'Navigating directly to property URL');
+        await page.goto(directUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await gaussianDelay(page, 2000, 400);
 
-      this.logger.info({ site, address }, 'Waiting for autocomplete results');
-      try {
-        await page.waitForSelector(this.selectors.autocompleteResult, {
-          timeout: 8000,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const diag = await this.getPageDiagnostics(page);
-        const selectorProbe = await this.probeSelector(page, this.selectors.autocompleteResult);
-        this.logger.error(
-          { site, address, err: msg, selector: this.selectors.autocompleteResult, selectorProbe, ...diag },
-          'DIAG: Autocomplete did not appear — selector outdated or search typed incorrectly',
-        );
-        throw err;
-      }
-      await gaussianDelay(page, 800, 200);
+        // Check for blocks on the direct URL
+        const blockedDirect = await this.detectBlock(page);
+        if (blockedDirect) {
+          this.logger.warn({ site, address }, 'Bot detection triggered on direct property URL');
+          await this.screenshotOnDebug(page, 'blocked-direct');
+          return { status: 'blocked', error: 'Bot detection triggered on direct property URL' };
+        }
 
-      this.logger.info({ site, address }, 'Clicking first autocomplete result');
-      await humanClick(page, this.selectors.autocompleteResult);
+        this.logger.info({ site, address }, 'Waiting for property page to load');
+        try {
+          await page.waitForSelector(this.selectors.priceSelector, { timeout: 15000 });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const diag = await this.getPageDiagnostics(page);
+          const selectorProbe = await this.probeSelector(page, this.selectors.priceSelector);
+          this.logger.error(
+            { site, address, err: msg, selector: this.selectors.priceSelector, selectorProbe, ...diag },
+            'DIAG: Property page price element not found after direct navigation',
+          );
+          throw err;
+        }
+      } else {
+        // Autocomplete strategy: type address in search box and pick first suggestion
+        this.logger.info({ site, address }, 'Typing address into search box');
+        try {
+          await humanClick(page, this.selectors.searchBox);
+          await humanType(page, this.selectors.searchBox, address);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const diag = await this.getPageDiagnostics(page);
+          const selectorProbe = await this.probeSelector(page, this.selectors.searchBox);
+          this.logger.error(
+            { site, address, err: msg, selector: this.selectors.searchBox, selectorProbe, ...diag },
+            'DIAG: Failed to interact with search box — selector likely outdated',
+          );
+          throw err;
+        }
 
-      this.logger.info({ site, address }, 'Waiting for property page to load');
-      try {
-        await page.waitForSelector(this.selectors.priceSelector, {
-          timeout: 15000,
-        });
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        const diag = await this.getPageDiagnostics(page);
-        const selectorProbe = await this.probeSelector(page, this.selectors.priceSelector);
-        this.logger.error(
-          { site, address, err: msg, selector: this.selectors.priceSelector, selectorProbe, ...diag },
-          'DIAG: Property page price element not found — wrong page loaded or price selector outdated',
-        );
-        throw err;
+        this.logger.info({ site, address }, 'Waiting for autocomplete results');
+        try {
+          await page.waitForSelector(this.selectors.autocompleteResult, {
+            timeout: 8000,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const diag = await this.getPageDiagnostics(page);
+          const selectorProbe = await this.probeSelector(page, this.selectors.autocompleteResult);
+          this.logger.error(
+            { site, address, err: msg, selector: this.selectors.autocompleteResult, selectorProbe, ...diag },
+            'DIAG: Autocomplete did not appear — selector outdated or search typed incorrectly',
+          );
+          throw err;
+        }
+        await gaussianDelay(page, 800, 200);
+
+        this.logger.info({ site, address }, 'Clicking first autocomplete result');
+        await humanClick(page, this.selectors.autocompleteResult);
+
+        this.logger.info({ site, address }, 'Waiting for property page to load');
+        try {
+          await page.waitForSelector(this.selectors.priceSelector, {
+            timeout: 15000,
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          const diag = await this.getPageDiagnostics(page);
+          const selectorProbe = await this.probeSelector(page, this.selectors.priceSelector);
+          this.logger.error(
+            { site, address, err: msg, selector: this.selectors.priceSelector, selectorProbe, ...diag },
+            'DIAG: Property page price element not found — wrong page loaded or price selector outdated',
+          );
+          throw err;
+        }
       }
 
       // Check for blocks on the result page
@@ -196,7 +227,32 @@ export abstract class BaseScraper implements Scraper {
         // ignore
       }
     }
+    // Also check page title for access-denied patterns (PerimeterX, CloudFront 403, etc.)
+    try {
+      const title = await page.title();
+      const lc = title.toLowerCase();
+      if (
+        lc.includes('access to this page has been denied') ||
+        lc.includes('access denied') ||
+        lc.includes('error: the request could not be satisfied') ||
+        lc === '403 error' ||
+        lc === '403'
+      ) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
     return false;
+  }
+
+  /**
+   * Override in subclasses to provide a direct property URL instead of using
+   * the homepage search box + autocomplete flow.
+   * Return null to use the default autocomplete-based navigation.
+   */
+  protected getDirectPropertyUrl(_address: string): string | null {
+    return null;
   }
 
   protected async screenshotOnDebug(

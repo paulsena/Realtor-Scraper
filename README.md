@@ -155,6 +155,23 @@ src/
     └── logger.ts               # Pino logger
 ```
 
+## Scraper Debugging
+
+The `scraper-debug/` directory contains standalone diagnostic scripts for testing scrapers outside the full API stack:
+
+| Script | Purpose |
+|--------|---------|
+| `redfin-myhome.ts` | Full Redfin flow: navigates to what-is-my-home-worth, types address, clicks autocomplete, checks price selectors and JSON-LD |
+| `redfin-price-sel.ts` | Discovers price-related DOM elements by walking the page — useful when selectors break after a site redesign |
+
+Run with:
+```bash
+npx tsx scraper-debug/redfin-myhome.ts
+npx tsx scraper-debug/redfin-price-sel.ts
+```
+
+Google Chrome must be installed locally. Edit the hardcoded address at the bottom of each file before running.
+
 ## Notes
 
 - Selectors in `zillow.ts`, `redfin.ts`, and `realtor.ts` will need empirical tuning against live sites — scrapers use JSON-LD extraction first and fall back to DOM selectors

@@ -3,8 +3,21 @@ import { BaseScraper, type ScraperSelectors } from './base-scraper.js';
 import type { ScrapeResult } from './types.js';
 import type pino from 'pino';
 
+// Reverse map to un-expand normalizeAddress abbreviations for URL construction
+const REVERSE_ABBREVIATIONS: Record<string, string> = {
+  street: 'st',
+  avenue: 'ave',
+  boulevard: 'blvd',
+  drive: 'dr',
+  lane: 'ln',
+  court: 'ct',
+  road: 'rd',
+  place: 'pl',
+  circle: 'cir',
+};
+
 const SELECTORS = {
-  searchBox: 'input[type="text"][aria-label*="Search"], input[id="search-box-input"]',
+  searchBox: 'input[aria-label="Search"], input[type="text"][aria-label*="Search"], input[id="search-box-input"]',
   autocompleteResult:
     'ul[role="listbox"] li[role="option"] >> nth=0',
   price:
@@ -38,6 +51,19 @@ export class ZillowScraper extends BaseScraper {
     priceSelector: SELECTORS.price,
   };
 
+  /**
+   * Build a direct Zillow property URL from the normalized address.
+   * Reverses the abbreviation expansion done by normalizeAddress so Zillow can resolve it.
+   * e.g. "26 e chestnut street asheville nc 28801" → zillow.com/homes/26-e-chestnut-st-asheville-nc-28801_rb/
+   */
+  protected getDirectPropertyUrl(address: string): string {
+    const slug = address
+      .split(' ')
+      .map((word) => REVERSE_ABBREVIATIONS[word] ?? word)
+      .join('-');
+    return `https://www.zillow.com/homes/${slug}_rb/`;
+  }
+
   protected async extractData(page: Page): Promise<ScrapeResult> {
     const site = this.name;
     const url = page.url();
@@ -56,7 +82,7 @@ export class ZillowScraper extends BaseScraper {
       }
       this.logger.warn(
         { site, url, types },
-        'DIAG: JSON-LD found but no SingleFamilyResidence type — falling through',
+        'DIAG: JSON-LD found but no property type (SingleFamilyResidence/RealEstateListing) — falling through',
       );
     } else {
       this.logger.warn({ site, url }, 'DIAG: No JSON-LD scripts found on page');
@@ -69,18 +95,28 @@ export class ZillowScraper extends BaseScraper {
 
   private parseJsonLd(data: unknown[]): ScrapeResult | null {
     for (const item of data) {
-      if (
-        typeof item === 'object' &&
-        item !== null &&
-        '@type' in item &&
-        (item as Record<string, unknown>)['@type'] === 'SingleFamilyResidence'
-      ) {
+      if (typeof item === 'object' && item !== null && '@type' in item) {
         const obj = item as Record<string, unknown>;
+        const type = obj['@type'];
+        const typeArr = Array.isArray(type) ? type : [type];
+        const isProperty =
+          typeArr.includes('SingleFamilyResidence') ||
+          typeArr.includes('RealEstateListing') ||
+          typeArr.includes('Residence');
+        if (!isProperty) continue;
+
         const result: ScrapeResult = { status: 'success' };
 
-        // Extract price from floorSize/price fields
+        // Extract price — check direct price field or offers.price
         if (typeof obj['price'] === 'string' || typeof obj['price'] === 'number') {
           result.estimatedPrice = parseNumeric(String(obj['price']));
+        }
+        const offers = obj['offers'] as Record<string, unknown> | undefined;
+        if (!result.estimatedPrice && offers) {
+          const offerPrice = offers['price'];
+          if (typeof offerPrice === 'string' || typeof offerPrice === 'number') {
+            result.estimatedPrice = parseNumeric(String(offerPrice));
+          }
         }
 
         const details: NonNullable<ScrapeResult['details']> = {};
@@ -111,10 +147,10 @@ export class ZillowScraper extends BaseScraper {
   private async extractFromDom(page: Page): Promise<ScrapeResult> {
     const result: ScrapeResult = { status: 'success' };
 
-    // Extract Zestimate or price
-    const zestimateText = await safeTextContent(page, SELECTORS.zestimate);
+    // Extract listing price first (confirmed reliable), then fall back to Zestimate
     const priceText = await safeTextContent(page, SELECTORS.price);
-    const priceSource = zestimateText ?? priceText;
+    const zestimateText = await safeTextContent(page, SELECTORS.zestimate);
+    const priceSource = priceText ?? zestimateText;
     if (priceSource) {
       result.estimatedPrice = parseNumeric(priceSource);
     }
