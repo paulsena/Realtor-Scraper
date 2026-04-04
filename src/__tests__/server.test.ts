@@ -59,6 +59,49 @@ async function request(
   });
 }
 
+async function requestRaw(
+  app: express.Express,
+  path: string,
+): Promise<{ status: number; contentType: string | null }> {
+  const { createServer } = await import('node:http');
+
+  return new Promise((resolve, reject) => {
+    const server = createServer(app);
+    server.listen(0, () => {
+      const addr = server.address();
+      if (!addr || typeof addr === 'string') {
+        server.close();
+        reject(new Error('Failed to get server address'));
+        return;
+      }
+      const port = addr.port;
+      fetch(`http://127.0.0.1:${port}${path}`)
+        .then((res) => {
+          server.close();
+          resolve({ status: res.status, contentType: res.headers.get('content-type') });
+        })
+        .catch((err) => {
+          server.close();
+          reject(err);
+        });
+    });
+  });
+}
+
+describe('Swagger docs', () => {
+  it('GET /api-docs returns HTML without auth', async () => {
+    const res = await requestRaw(app, '/api-docs');
+    expect(res.status).toBe(200);
+    expect(res.contentType).toMatch(/text\/html/);
+  });
+
+  it('GET /api-docs/ returns HTML without auth', async () => {
+    const res = await requestRaw(app, '/api-docs/');
+    expect(res.status).toBe(200);
+    expect(res.contentType).toMatch(/text\/html/);
+  });
+});
+
 describe('Server smoke tests', () => {
   it('GET /health returns 200', async () => {
     const res = await request(app, 'GET', '/health');

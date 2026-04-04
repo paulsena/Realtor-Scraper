@@ -14,7 +14,7 @@ import { ZillowScraper } from './scrapers/zillow.js';
 import { RedfinScraper } from './scrapers/redfin.js';
 import { RealtorScraper } from './scrapers/realtor.js';
 
-dotenv.config();
+dotenv.config({ override: true });
 
 const config = loadConfig();
 const logger = createLogger(config.logLevel);
@@ -39,9 +39,9 @@ async function main(): Promise<void> {
 
   // Build enabled scrapers and wire ScraperService
   const scrapers = [];
-  if (config.scrapers.zillowEnabled) scrapers.push(new ZillowScraper());
-  if (config.scrapers.redfinEnabled) scrapers.push(new RedfinScraper());
-  if (config.scrapers.realtorEnabled) scrapers.push(new RealtorScraper());
+  if (config.scrapers.zillowEnabled) scrapers.push(new ZillowScraper(logger));
+  if (config.scrapers.redfinEnabled) scrapers.push(new RedfinScraper(logger));
+  if (config.scrapers.realtorEnabled) scrapers.push(new RealtorScraper(logger));
 
   const scraperService = new ScraperService(cache, pool, scrapers, {
     scrapeTimeoutMs: config.scrapeTimeoutMs,

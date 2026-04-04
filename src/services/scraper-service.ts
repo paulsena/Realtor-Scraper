@@ -43,6 +43,7 @@ export class ScraperService {
     // Cache hit — return immediately
     const cached = this.cache.get(normalized) as Record<string, ScrapeResult> | null;
     if (cached) {
+      this.logger.info({ address: normalized }, 'Cache hit — returning cached result');
       for (const site of Object.keys(cached)) {
         scrapeRequestsTotal.labels(site, 'cached').inc();
       }
@@ -63,6 +64,9 @@ export class ScraperService {
         results: {},
       };
     }
+
+    const sites = this.scrapers.map((s) => s.name).join(', ');
+    this.logger.info({ address: normalized, sites }, 'Starting scrape');
 
     // Parallel scrape with hard ceiling
     const scrapeAll = async (): Promise<Record<string, ScrapeResult>> => {
@@ -101,6 +105,12 @@ export class ScraperService {
       }
     }
 
+    const durationMs = Date.now() - startTime;
+    const summary = Object.fromEntries(
+      Object.entries(results).map(([site, r]) => [site, r.status]),
+    );
+    this.logger.info({ address: normalized, durationMs, results: summary }, 'Scrape finished');
+
     // Cache only if at least one scraper succeeded
     const hasSuccess = Object.values(results).some((r) => r.status === 'success');
     if (hasSuccess) {
@@ -110,7 +120,7 @@ export class ScraperService {
     return {
       address: normalized,
       cached: false,
-      durationMs: Date.now() - startTime,
+      durationMs,
       results,
     };
   }
@@ -142,7 +152,7 @@ export class ScraperService {
         result.status === 'error' ||
         result.status === 'timeout'
       ) {
-        this.logger.warn({ site, status: result.status }, 'First attempt failed, retrying');
+        this.logger.warn({ site, address, status: result.status }, 'First attempt failed, retrying');
         void context.close().catch(() => {});
         await this.delay(RETRY_DELAY_MS);
 
@@ -171,7 +181,7 @@ export class ScraperService {
       return result;
     } catch (err) {
       // First attempt threw — retire context and retry once
-      this.logger.warn({ site, err }, 'First attempt threw, retrying');
+      this.logger.warn({ site, address, err }, 'First attempt threw, retrying');
       void context.close().catch(() => {});
       await this.delay(RETRY_DELAY_MS);
 

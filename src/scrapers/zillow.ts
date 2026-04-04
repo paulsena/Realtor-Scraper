@@ -1,6 +1,7 @@
 import type { Page } from 'rebrowser-playwright';
 import { BaseScraper, type ScraperSelectors } from './base-scraper.js';
 import type { ScrapeResult } from './types.js';
+import type pino from 'pino';
 
 const SELECTORS = {
   searchBox: 'input[id="search-box-input"], input[type="text"][aria-label*="Search"]',
@@ -26,6 +27,10 @@ const SELECTORS = {
 
 export class ZillowScraper extends BaseScraper {
   readonly name = 'zillow';
+
+  constructor(logger?: pino.Logger) {
+    super(logger);
+  }
   protected readonly landingUrl = 'https://www.zillow.com/';
   protected readonly selectors: ScraperSelectors = {
     searchBox: SELECTORS.searchBox,

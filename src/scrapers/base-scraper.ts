@@ -7,6 +7,8 @@ import {
   humanType,
 } from '../stealth/human.js';
 import { loadConfig } from '../config.js';
+import { createLogger } from '../utils/logger.js';
+import type pino from 'pino';
 
 const CAPTCHA_INDICATORS = [
   'iframe[src*="captcha"]',
@@ -38,6 +40,11 @@ export abstract class BaseScraper implements Scraper {
   abstract readonly name: string;
   protected abstract readonly landingUrl: string;
   protected abstract readonly selectors: ScraperSelectors;
+  protected readonly logger: pino.Logger;
+
+  constructor(logger?: pino.Logger) {
+    this.logger = logger ?? createLogger('info');
+  }
 
   protected abstract extractData(page: Page): Promise<ScrapeResult>;
 
@@ -59,12 +66,14 @@ export abstract class BaseScraper implements Scraper {
     context: BrowserContext,
     address: string,
   ): Promise<ScrapeResult> {
+    const site = this.name;
     let page: Page | undefined;
     try {
       page = await context.newPage();
 
-      // Navigate with Google referrer
+      this.logger.info({ site, address }, 'Navigating to landing page');
       await navigateWithReferrer(page, this.landingUrl);
+      this.logger.info({ site }, 'Landing page loaded, waiting before interaction');
 
       // Gaussian delay 2-4s (mean=3000, stddev=500)
       await gaussianDelay(page, 3000, 500);
@@ -75,24 +84,25 @@ export abstract class BaseScraper implements Scraper {
       // Check for bot detection before interacting
       const blocked = await this.detectBlock(page);
       if (blocked) {
+        this.logger.warn({ site, address }, 'Bot detection triggered on landing page');
         await this.screenshotOnDebug(page, 'blocked');
         return { status: 'blocked', error: 'Bot detection triggered on landing page' };
       }
 
-      // Click search box and type address
+      this.logger.info({ site, address }, 'Typing address into search box');
       await humanClick(page, this.selectors.searchBox);
       await humanType(page, this.selectors.searchBox, address);
 
-      // Wait for autocomplete results
+      this.logger.info({ site, address }, 'Waiting for autocomplete results');
       await page.waitForSelector(this.selectors.autocompleteResult, {
         timeout: 8000,
       });
       await gaussianDelay(page, 800, 200);
 
-      // Click first autocomplete result
+      this.logger.info({ site, address }, 'Clicking first autocomplete result');
       await humanClick(page, this.selectors.autocompleteResult);
 
-      // Wait for result page with price selector
+      this.logger.info({ site, address }, 'Waiting for property page to load');
       await page.waitForSelector(this.selectors.priceSelector, {
         timeout: 15000,
       });
@@ -100,14 +110,18 @@ export abstract class BaseScraper implements Scraper {
       // Check for blocks on the result page
       const blockedOnResult = await this.detectBlock(page);
       if (blockedOnResult) {
+        this.logger.warn({ site, address }, 'Bot detection triggered on property page');
         await this.screenshotOnDebug(page, 'blocked-result');
         return { status: 'blocked', error: 'Bot detection triggered on result page' };
       }
 
-      // Extract data (subclass implements)
-      return await this.extractData(page);
+      this.logger.info({ site, address }, 'Extracting property data');
+      const result = await this.extractData(page);
+      this.logger.info({ site, address, status: result.status }, 'Scrape complete');
+      return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      this.logger.error({ site, address, err: message }, 'Scrape failed with error');
       if (page) {
         await this.screenshotOnDebug(page, 'error');
       }

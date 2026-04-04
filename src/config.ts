@@ -49,8 +49,8 @@ export function loadConfig(): Config {
   return Object.freeze({
     port: intEnv('PORT', 3000),
     apiKey: requiredEnv('API_KEY'),
-    scrapeTimeoutMs: intEnv('SCRAPE_TIMEOUT_MS', 20000),
-    requestTimeoutMs: intEnv('REQUEST_TIMEOUT_MS', 30000),
+    scrapeTimeoutMs: intEnv('SCRAPE_TIMEOUT_MS', 60000),
+    requestTimeoutMs: intEnv('REQUEST_TIMEOUT_MS', 150000),
     scrapers: Object.freeze({
       zillowEnabled: boolEnv('SCRAPERS_ZILLOW_ENABLED', true),
       redfinEnabled: boolEnv('SCRAPERS_REDFIN_ENABLED', true),

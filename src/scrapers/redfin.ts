@@ -1,6 +1,7 @@
 import type { Page } from 'rebrowser-playwright';
 import { BaseScraper, type ScraperSelectors } from './base-scraper.js';
 import type { ScrapeResult } from './types.js';
+import type pino from 'pino';
 
 const SELECTORS = {
   searchBox: 'input#search-box-input, input[data-rf-test-id="search-input"], #homepageSearchBox input',
@@ -26,6 +27,10 @@ const SELECTORS = {
 
 export class RedfinScraper extends BaseScraper {
   readonly name = 'redfin';
+
+  constructor(logger?: pino.Logger) {
+    super(logger);
+  }
   protected readonly landingUrl = 'https://www.redfin.com/';
   protected readonly selectors: ScraperSelectors = {
     searchBox: SELECTORS.searchBox,
