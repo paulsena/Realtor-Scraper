@@ -1,4 +1,4 @@
-import type { BrowserContext } from 'rebrowser-playwright';
+import type { BrowserContext, Page } from 'rebrowser-playwright';
 
 export interface ScrapeResult {
   status: 'success' | 'timeout' | 'error' | 'blocked';
@@ -24,9 +24,11 @@ export interface ScrapeResult {
 
 export interface Scraper {
   readonly name: string;
+  readonly landingUrl: string;
   scrape(
     context: BrowserContext,
     address: string,
     timeoutMs: number,
+    landingPage?: Page,
   ): Promise<ScrapeResult>;
 }

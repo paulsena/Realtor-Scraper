@@ -1,6 +1,6 @@
 import { normalizeAddress } from '../normalize/address.js';
 import { Cache } from '../cache/cache.js';
-import { ContextPool } from '../pool/context-pool.js';
+import { ContextPool, type AcquiredContext } from '../pool/context-pool.js';
 import type { Scraper, ScrapeResult } from '../scrapers/types.js';
 import {
   scrapeRequestsTotal,
@@ -134,15 +134,15 @@ export class ScraperService {
     activeScrapes.inc();
     const timer = scrapeDurationSeconds.startTimer({ site });
 
-    let context = await this.pool.acquire(site);
+    let acquired: AcquiredContext = await this.pool.acquire(site);
     try {
-      const result = await scraper.scrape(context, address, timeoutMs);
+      const result = await scraper.scrape(acquired.context, address, timeoutMs, acquired.landingPage);
 
       if (result.status === 'success') {
         scrapeRequestsTotal.labels(site, 'success').inc();
         timer();
         activeScrapes.dec();
-        await this.pool.release(site, context);
+        await this.pool.release(site, acquired.context);
         return result;
       }
 
@@ -153,22 +153,22 @@ export class ScraperService {
         result.status === 'timeout'
       ) {
         this.logger.warn({ site, address, status: result.status }, 'First attempt failed, retrying');
-        void context.close().catch(() => {});
+        void acquired.context.close().catch(() => {});
         await this.delay(RETRY_DELAY_MS);
 
-        context = await this.pool.acquire(site);
+        acquired = await this.pool.acquire(site);
         try {
-          const retryResult = await scraper.scrape(context, address, timeoutMs);
+          const retryResult = await scraper.scrape(acquired.context, address, timeoutMs, acquired.landingPage);
           scrapeRequestsTotal.labels(site, retryResult.status).inc();
           timer();
           activeScrapes.dec();
-          await this.pool.release(site, context);
+          await this.pool.release(site, acquired.context);
           return retryResult;
         } catch (retryErr) {
           scrapeRequestsTotal.labels(site, 'error').inc();
           timer();
           activeScrapes.dec();
-          await this.pool.release(site, context);
+          await this.pool.release(site, acquired.context);
           return { status: 'error', error: String(retryErr) };
         }
       }
@@ -177,27 +177,27 @@ export class ScraperService {
       scrapeRequestsTotal.labels(site, result.status).inc();
       timer();
       activeScrapes.dec();
-      await this.pool.release(site, context);
+      await this.pool.release(site, acquired.context);
       return result;
     } catch (err) {
       // First attempt threw — retire context and retry once
       this.logger.warn({ site, address, err }, 'First attempt threw, retrying');
-      void context.close().catch(() => {});
+      void acquired.context.close().catch(() => {});
       await this.delay(RETRY_DELAY_MS);
 
-      context = await this.pool.acquire(site);
+      acquired = await this.pool.acquire(site);
       try {
-        const retryResult = await scraper.scrape(context, address, timeoutMs);
+        const retryResult = await scraper.scrape(acquired.context, address, timeoutMs, acquired.landingPage);
         scrapeRequestsTotal.labels(site, retryResult.status).inc();
         timer();
         activeScrapes.dec();
-        await this.pool.release(site, context);
+        await this.pool.release(site, acquired.context);
         return retryResult;
       } catch (retryErr) {
         scrapeRequestsTotal.labels(site, 'error').inc();
         timer();
         activeScrapes.dec();
-        await this.pool.release(site, context);
+        await this.pool.release(site, acquired.context);
         return { status: 'error', error: String(retryErr) };
       }
     }

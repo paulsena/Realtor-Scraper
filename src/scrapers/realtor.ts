@@ -30,7 +30,7 @@ export class RealtorScraper extends BaseScraper {
   constructor(logger?: pino.Logger) {
     super(logger);
   }
-  protected readonly landingUrl = 'https://www.realtor.com/';
+  readonly landingUrl = 'https://www.realtor.com/';
   protected readonly selectors: ScraperSelectors = {
     searchBox: SELECTORS.searchBox,
     autocompleteResult: SELECTORS.autocompleteResult,

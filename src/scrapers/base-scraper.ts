@@ -38,7 +38,7 @@ export interface ScraperSelectors {
 
 export abstract class BaseScraper implements Scraper {
   abstract readonly name: string;
-  protected abstract readonly landingUrl: string;
+  abstract readonly landingUrl: string;
   protected abstract readonly selectors: ScraperSelectors;
   protected readonly logger: pino.Logger;
 
@@ -52,12 +52,13 @@ export abstract class BaseScraper implements Scraper {
     context: BrowserContext,
     address: string,
     timeoutMs: number,
+    landingPage?: Page,
   ): Promise<ScrapeResult> {
     const timeoutPromise = new Promise<ScrapeResult>((resolve) => {
       setTimeout(() => resolve({ status: 'timeout' }), timeoutMs);
     });
 
-    const scrapePromise = this.doScrape(context, address);
+    const scrapePromise = this.doScrape(context, address, landingPage);
 
     return Promise.race([scrapePromise, timeoutPromise]);
   }
@@ -65,18 +66,22 @@ export abstract class BaseScraper implements Scraper {
   private async doScrape(
     context: BrowserContext,
     address: string,
+    preloadedPage?: Page,
   ): Promise<ScrapeResult> {
     const site = this.name;
     let page: Page | undefined;
     try {
-      page = await context.newPage();
-
-      this.logger.info({ site, address }, 'Navigating to landing page');
-      await navigateWithReferrer(page, this.landingUrl);
-      this.logger.info({ site }, 'Landing page loaded, waiting before interaction');
-
-      // Gaussian delay 2-4s (mean=3000, stddev=500)
-      await gaussianDelay(page, 3000, 500);
+      if (preloadedPage) {
+        page = preloadedPage;
+        this.logger.info({ site, address }, 'Using pre-navigated landing page');
+      } else {
+        page = await context.newPage();
+        this.logger.info({ site, address }, 'Navigating to landing page');
+        await navigateWithReferrer(page, this.landingUrl);
+        this.logger.info({ site }, 'Landing page loaded, waiting before interaction');
+        // Gaussian delay 2-4s only when we navigated fresh — simulates reading the page
+        await gaussianDelay(page, 3000, 500);
+      }
 
       // Dismiss cookie banners if present
       await this.dismissCookieBanner(page);

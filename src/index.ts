@@ -31,23 +31,43 @@ async function main(): Promise<void> {
   const cache = new Cache(db, config.cacheTtlDays);
   logger.info('SQLite database initialized');
 
-  // Initialize context pool and warm up
-  const pool = new ContextPool();
-  logger.info('Warming up context pool...');
-  await pool.warmUp();
-  logger.info('Context pool warmed up');
-
-  // Build enabled scrapers and wire ScraperService
+  // Build enabled scrapers
   const scrapers = [];
   if (config.scrapers.zillowEnabled) scrapers.push(new ZillowScraper(logger));
   if (config.scrapers.redfinEnabled) scrapers.push(new RedfinScraper(logger));
   if (config.scrapers.realtorEnabled) scrapers.push(new RealtorScraper(logger));
+
+  // Initialize context pool and warm up — pre-navigates each context to its landing page
+  const pool = new ContextPool();
+  logger.info('Warming up context pool and pre-navigating landing pages...');
+  await pool.warmUp(scrapers);
+  logger.info('Context pool warmed up');
 
   const scraperService = new ScraperService(cache, pool, scrapers, {
     scrapeTimeoutMs: config.scrapeTimeoutMs,
     requestTimeoutMs: config.requestTimeoutMs,
     logLevel: config.logLevel,
   });
+
+  // Startup health check — bail if all scrapers are broken
+  if (scrapers.length > 0) {
+    const HEALTH_CHECK_ADDRESS = '26 E Chestnut St, Asheville, NC 28801';
+    logger.info({ address: HEALTH_CHECK_ADDRESS }, 'Running startup health check scrape...');
+    const healthResult = await scraperService.scrape(HEALTH_CHECK_ADDRESS);
+    const successes = Object.values(healthResult.results).filter((r) => r.status === 'success');
+    if (successes.length === 0) {
+      logger.error(
+        { results: Object.fromEntries(Object.entries(healthResult.results).map(([k, v]) => [k, v.status])) },
+        'Startup health check failed — all scrapers returned non-success. Exiting.',
+      );
+      process.exit(1);
+    }
+    logger.info(
+      { successCount: successes.length, total: scrapers.length },
+      'Startup health check passed',
+    );
+  }
+
   initHouseValueRoute(scraperService);
 
   // Create and start server

@@ -1,21 +1,31 @@
-import { type BrowserContext } from 'rebrowser-playwright';
+import { type BrowserContext, type Page } from 'rebrowser-playwright';
 import { loadConfig, type Config } from '../config.js';
 import { createStealthContext } from '../stealth/context-factory.js';
 import { closeBrowser } from '../stealth/browser.js';
 import { contextPoolSize } from '../metrics/index.js';
+import type { Scraper } from '../scrapers/types.js';
 
 interface PoolEntry {
   context: BrowserContext;
   createdAt: number;
   useCount: number;
   inUse: boolean;
+  /** Pre-navigated landing page, ready for the next scrape. Consumed on acquire. */
+  landingPage?: Page;
 }
 
 type SiteName = string;
 
+export interface AcquiredContext {
+  context: BrowserContext;
+  /** Pre-navigated landing page if one was ready, otherwise undefined. */
+  landingPage?: Page;
+}
+
 export class ContextPool {
   private readonly pools = new Map<SiteName, PoolEntry[]>();
   private readonly config: Config;
+  private siteUrls = new Map<SiteName, string>();
   private backgroundInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
@@ -41,7 +51,7 @@ export class ContextPool {
     contextPoolSize.labels(site).set(pool.length);
   }
 
-  async acquire(site: SiteName): Promise<BrowserContext> {
+  async acquire(site: SiteName): Promise<AcquiredContext> {
     const pool = this.getPool(site);
 
     // Find a free, unexpired context
@@ -50,10 +60,13 @@ export class ContextPool {
       entry.inUse = true;
       entry.useCount++;
       this.updateGauge(site);
-      return entry.context;
+      // Pop the pre-navigated page so it's not reused
+      const landingPage = entry.landingPage;
+      entry.landingPage = undefined;
+      return { context: entry.context, landingPage };
     }
 
-    // Create a new context
+    // Create a new context on demand (no pre-navigated page)
     const context = await createStealthContext();
     const newEntry: PoolEntry = {
       context,
@@ -63,7 +76,7 @@ export class ContextPool {
     };
     pool.push(newEntry);
     this.updateGauge(site);
-    return context;
+    return { context };
   }
 
   async release(site: SiteName, context: BrowserContext): Promise<void> {
@@ -74,47 +87,35 @@ export class ContextPool {
     entry.inUse = false;
 
     if (this.isExpired(entry)) {
-      // Remove and close expired context, replace async
       const idx = pool.indexOf(entry);
       if (idx !== -1) pool.splice(idx, 1);
       this.updateGauge(site);
-
       void entry.context.close().catch(() => {});
 
-      // Replace with a fresh context in the background
-      void createStealthContext()
-        .then((newCtx) => {
-          pool.push({
-            context: newCtx,
-            createdAt: Date.now(),
-            useCount: 0,
-            inUse: false,
-          });
-          this.updateGauge(site);
-        })
-        .catch(() => {});
+      // Replace with a fresh context, pre-navigated and ready
+      void this.createPreloadedEntry(site).then((newEntry) => {
+        pool.push(newEntry);
+        this.updateGauge(site);
+      }).catch(() => {});
+    } else {
+      // Context is still good — pre-navigate it in the background for next use
+      void this.prenavigateEntry(site, entry).catch(() => {});
     }
   }
 
-  async warmUp(): Promise<void> {
-    const scrapers = this.config.scrapers;
-    const sites: SiteName[] = [];
-    if (scrapers.zillowEnabled) sites.push('zillow');
-    if (scrapers.redfinEnabled) sites.push('redfin');
-    if (scrapers.realtorEnabled) sites.push('realtor');
+  async warmUp(scrapers: Scraper[]): Promise<void> {
+    // Build site → URL map for background refreshes
+    for (const scraper of scrapers) {
+      this.siteUrls.set(scraper.name, scraper.landingUrl);
+    }
 
     const promises: Promise<void>[] = [];
-    for (const site of sites) {
+    for (const scraper of scrapers) {
       for (let i = 0; i < this.config.poolSizePerSite; i++) {
         promises.push(
-          createStealthContext().then((ctx) => {
-            this.getPool(site).push({
-              context: ctx,
-              createdAt: Date.now(),
-              useCount: 0,
-              inUse: false,
-            });
-            this.updateGauge(site);
+          this.createPreloadedEntry(scraper.name).then((entry) => {
+            this.getPool(scraper.name).push(entry);
+            this.updateGauge(scraper.name);
           }),
         );
       }
@@ -127,6 +128,31 @@ export class ContextPool {
     }, 60_000);
   }
 
+  private async createPreloadedEntry(site: SiteName): Promise<PoolEntry> {
+    const context = await createStealthContext();
+    const entry: PoolEntry = {
+      context,
+      createdAt: Date.now(),
+      useCount: 0,
+      inUse: false,
+    };
+    await this.prenavigateEntry(site, entry);
+    return entry;
+  }
+
+  private async prenavigateEntry(site: SiteName, entry: PoolEntry): Promise<void> {
+    const url = this.siteUrls.get(site);
+    if (!url) return;
+    try {
+      const page = await entry.context.newPage();
+      await page.setExtraHTTPHeaders({ Referer: 'https://www.google.com/' });
+      await page.goto(url, { waitUntil: 'domcontentloaded' });
+      entry.landingPage = page;
+    } catch {
+      // Non-fatal — scraper will navigate normally if no page is available
+    }
+  }
+
   private async retireExpiredIdle(): Promise<void> {
     for (const [site, pool] of this.pools) {
       const expiredIdle = pool.filter((e) => !e.inUse && this.isExpired(e));
@@ -134,6 +160,12 @@ export class ContextPool {
         const idx = pool.indexOf(entry);
         if (idx !== -1) pool.splice(idx, 1);
         void entry.context.close().catch(() => {});
+
+        // Replace with a fresh pre-navigated context
+        void this.createPreloadedEntry(site).then((newEntry) => {
+          pool.push(newEntry);
+          this.updateGauge(site);
+        }).catch(() => {});
       }
       this.updateGauge(site);
     }
