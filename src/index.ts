@@ -2,11 +2,13 @@ import dotenv from 'dotenv';
 import { loadConfig } from './config.js';
 import { createApp } from './server.js';
 import { createLogger } from './utils/logger.js';
+import { initMetrics } from './metrics/index.js';
 
 dotenv.config();
 
 const config = loadConfig();
 const logger = createLogger(config.logLevel);
+initMetrics();
 const app = createApp(config);
 
 const server = app.listen(config.port, () => {

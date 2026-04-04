@@ -2,7 +2,9 @@ import client from 'prom-client';
 
 export const register = client.register;
 
-client.collectDefaultMetrics({ register });
+export function initMetrics(): void {
+  client.collectDefaultMetrics({ register });
+}
 
 export const scrapeRequestsTotal = new client.Counter({
   name: 'scrape_requests_total',
