@@ -52,4 +52,9 @@ export class Cache {
       .run(cutoff);
     return info.changes;
   }
+
+  /** Remove a specific cache entry by normalized address. */
+  delete(normalizedAddress: string): void {
+    this.db.prepare('DELETE FROM cache WHERE address = ?').run(normalizedAddress);
+  }
 }
