@@ -9,6 +9,10 @@ import { initDatabase } from './cache/db.js';
 import { Cache } from './cache/cache.js';
 import { ContextPool } from './pool/context-pool.js';
 import { initHouseValueRoute } from './routes/house-value.js';
+import { ScraperService } from './services/scraper-service.js';
+import { ZillowScraper } from './scrapers/zillow.js';
+import { RedfinScraper } from './scrapers/redfin.js';
+import { RealtorScraper } from './scrapers/realtor.js';
 
 dotenv.config();
 
@@ -33,8 +37,18 @@ async function main(): Promise<void> {
   await pool.warmUp();
   logger.info('Context pool warmed up');
 
-  // Wire route dependencies
-  initHouseValueRoute(cache, pool);
+  // Build enabled scrapers and wire ScraperService
+  const scrapers = [];
+  if (config.scrapers.zillowEnabled) scrapers.push(new ZillowScraper());
+  if (config.scrapers.redfinEnabled) scrapers.push(new RedfinScraper());
+  if (config.scrapers.realtorEnabled) scrapers.push(new RealtorScraper());
+
+  const scraperService = new ScraperService(cache, pool, scrapers, {
+    scrapeTimeoutMs: config.scrapeTimeoutMs,
+    requestTimeoutMs: config.requestTimeoutMs,
+    logLevel: config.logLevel,
+  });
+  initHouseValueRoute(scraperService);
 
   // Create and start server
   const app = createApp(config);
