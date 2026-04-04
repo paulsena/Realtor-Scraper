@@ -6,7 +6,7 @@ import type pino from 'pino';
 const SELECTORS = {
   searchBox: 'input[type="text"][aria-label*="Search"], input[id="search-box-input"]',
   autocompleteResult:
-    'ul[id="search-box-results"] li:first-child, [data-testid="search-box-result-item"]:first-child',
+    'ul[role="listbox"] li[role="option"] >> nth=0',
   price:
     'span[data-testid="price"], .ds-summary-row .ds-value, .home-summary-row span[data-testid="price"]',
   zestimate:

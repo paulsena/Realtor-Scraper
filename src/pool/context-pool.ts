@@ -61,8 +61,11 @@ export class ContextPool {
       entry.useCount++;
       this.updateGauge(site);
       // Pop the pre-navigated page so it's not reused
-      const landingPage = entry.landingPage;
+      let landingPage = entry.landingPage;
       entry.landingPage = undefined;
+      if (landingPage && landingPage.isClosed()) {
+        landingPage = undefined;
+      }
       return { context: entry.context, landingPage };
     }
 
@@ -141,6 +144,9 @@ export class ContextPool {
   }
 
   private async prenavigateEntry(site: SiteName, entry: PoolEntry): Promise<void> {
+    // Realtor.com bot protection aggressively closes pre-navigated connections
+    if (site === 'realtor') return;
+
     const url = this.siteUrls.get(site);
     if (!url) return;
     try {

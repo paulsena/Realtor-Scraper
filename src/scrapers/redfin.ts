@@ -6,7 +6,7 @@ import type pino from 'pino';
 const SELECTORS = {
   searchBox: 'input#search-box-input, input[data-rf-test-id="search-input"], #homepageSearchBox input',
   autocompleteResult:
-    '.SearchMenu .item:first-child, [data-rf-test-id="search-menu"] .item:first-child, .typeahead-item:first-child',
+    '.item-row.clickable >> nth=0',
   price:
     '.statsValue [data-rf-test-id="avm-price"], .HomeInfoV2 .price, .EstimateSection .value',
   redfinEstimate:

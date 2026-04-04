@@ -7,7 +7,7 @@ const SELECTORS = {
   searchBox:
     'input[data-testid="freeTypeInput"], input[placeholder*="Search"], input[data-testid="search-bar-input"], input#rdc-search-form-input',
   autocompleteResult:
-    '[data-testid="suggestion-item"]:first-child, .search-suggestion:first-child, [data-testid="search-results-list"] li:first-child',
+    '[data-testid="suggestion-item"] >> nth=0, .search-suggestion >> nth=0, [data-testid="search-results-list"] li >> nth=0',
   price:
     '[data-testid="list-price"], .price-section .price, .summary-price',
   estimate:
@@ -51,6 +51,29 @@ export class RealtorScraper extends BaseScraper {
 
     // Fallback: DOM scraping
     return this.extractFromDom(page);
+  }
+
+  protected async detectBlock(page: Page): Promise<boolean> {
+    const baseBlocked = await super.detectBlock(page);
+    if (baseBlocked) return true;
+
+    // Kasada anti-bot challenge
+    try {
+      const kasadaScript = await page.$('script[src*="ips.js"]');
+      if (kasadaScript) return true;
+
+      const bodyText = await page.textContent('body');
+      if (
+        bodyText &&
+        bodyText.includes('Your request could not be processed') &&
+        bodyText.includes('Reference ID')
+      ) {
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
   }
 
   private parseJsonLd(data: unknown[]): ScrapeResult | null {
