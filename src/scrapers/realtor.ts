@@ -5,7 +5,7 @@ import type pino from 'pino';
 
 const SELECTORS = {
   searchBox:
-    'input[data-testid="search-bar-input"], input#rdc-search-form-input, input[placeholder*="Address"]',
+    'input[data-testid="freeTypeInput"], input[placeholder*="Search"], input[data-testid="search-bar-input"], input#rdc-search-form-input',
   autocompleteResult:
     '[data-testid="suggestion-item"]:first-child, .search-suggestion:first-child, [data-testid="search-results-list"] li:first-child',
   price:

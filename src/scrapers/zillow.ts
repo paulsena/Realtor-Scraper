@@ -4,7 +4,7 @@ import type { ScrapeResult } from './types.js';
 import type pino from 'pino';
 
 const SELECTORS = {
-  searchBox: 'input[id="search-box-input"], input[type="text"][aria-label*="Search"]',
+  searchBox: 'input[type="text"][aria-label*="Search"], input[id="search-box-input"]',
   autocompleteResult:
     'ul[id="search-box-results"] li:first-child, [data-testid="search-box-result-item"]:first-child',
   price:

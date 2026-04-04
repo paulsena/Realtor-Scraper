@@ -56,9 +56,15 @@ export async function humanClick(
   page: Page,
   selector: string,
 ): Promise<void> {
-  // Cast needed: rebrowser-playwright's Page vs playwright-core's Page
-  const cursor = await createCursor(page as never);
-  await cursor.actions.click({ target: selector });
+  try {
+    // Cast needed: rebrowser-playwright's Page vs playwright-core's Page
+    const cursor = await createCursor(page as never);
+    await cursor.actions.click({ target: selector });
+  } catch {
+    // ghost-cursor can fail due to rebrowser-playwright frame context differences;
+    // fall back to a direct click
+    await page.click(selector);
+  }
 }
 
 /**
