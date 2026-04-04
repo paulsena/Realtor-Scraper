@@ -39,14 +39,31 @@ export class ZillowScraper extends BaseScraper {
   };
 
   protected async extractData(page: Page): Promise<ScrapeResult> {
+    const site = this.name;
+    const url = page.url();
+
     // JSON-LD first strategy
     const jsonLd = await this.extractJsonLd(page);
     if (jsonLd) {
+      const types = jsonLd
+        .map((item) => (item as Record<string, unknown>)?.['@type'])
+        .filter(Boolean);
+      this.logger.info({ site, url, count: jsonLd.length, types }, 'DIAG: JSON-LD scripts found');
       const result = this.parseJsonLd(jsonLd);
-      if (result) return result;
+      if (result) {
+        this.logger.info({ site, url, strategy: 'json-ld' }, 'Extracted data via JSON-LD');
+        return result;
+      }
+      this.logger.warn(
+        { site, url, types },
+        'DIAG: JSON-LD found but no SingleFamilyResidence type — falling through',
+      );
+    } else {
+      this.logger.warn({ site, url }, 'DIAG: No JSON-LD scripts found on page');
     }
 
     // Fallback: DOM scraping
+    this.logger.info({ site, url, strategy: 'dom' }, 'Falling back to DOM scraping');
     return this.extractFromDom(page);
   }
 
@@ -113,6 +130,18 @@ export class ZillowScraper extends BaseScraper {
 
     if (Object.keys(details).length > 0) {
       result.details = details;
+    }
+
+    // Warn with selector probe when no price found
+    if (!result.estimatedPrice) {
+      const probe = {
+        zestimate: await this.probeSelector(page, SELECTORS.zestimate),
+        price: await this.probeSelector(page, SELECTORS.price),
+      };
+      this.logger.warn(
+        { site: this.name, url: page.url(), selectorProbe: probe },
+        'DIAG: DOM scraping found no price — check these selector alternatives',
+      );
     }
 
     // Price history

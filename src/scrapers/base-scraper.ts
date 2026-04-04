@@ -95,22 +95,55 @@ export abstract class BaseScraper implements Scraper {
       }
 
       this.logger.info({ site, address }, 'Typing address into search box');
-      await humanClick(page, this.selectors.searchBox);
-      await humanType(page, this.selectors.searchBox, address);
+      try {
+        await humanClick(page, this.selectors.searchBox);
+        await humanType(page, this.selectors.searchBox, address);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const diag = await this.getPageDiagnostics(page);
+        const selectorProbe = await this.probeSelector(page, this.selectors.searchBox);
+        this.logger.error(
+          { site, address, err: msg, selector: this.selectors.searchBox, selectorProbe, ...diag },
+          'DIAG: Failed to interact with search box — selector likely outdated',
+        );
+        throw err;
+      }
 
       this.logger.info({ site, address }, 'Waiting for autocomplete results');
-      await page.waitForSelector(this.selectors.autocompleteResult, {
-        timeout: 8000,
-      });
+      try {
+        await page.waitForSelector(this.selectors.autocompleteResult, {
+          timeout: 8000,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const diag = await this.getPageDiagnostics(page);
+        const selectorProbe = await this.probeSelector(page, this.selectors.autocompleteResult);
+        this.logger.error(
+          { site, address, err: msg, selector: this.selectors.autocompleteResult, selectorProbe, ...diag },
+          'DIAG: Autocomplete did not appear — selector outdated or search typed incorrectly',
+        );
+        throw err;
+      }
       await gaussianDelay(page, 800, 200);
 
       this.logger.info({ site, address }, 'Clicking first autocomplete result');
       await humanClick(page, this.selectors.autocompleteResult);
 
       this.logger.info({ site, address }, 'Waiting for property page to load');
-      await page.waitForSelector(this.selectors.priceSelector, {
-        timeout: 15000,
-      });
+      try {
+        await page.waitForSelector(this.selectors.priceSelector, {
+          timeout: 15000,
+        });
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        const diag = await this.getPageDiagnostics(page);
+        const selectorProbe = await this.probeSelector(page, this.selectors.priceSelector);
+        this.logger.error(
+          { site, address, err: msg, selector: this.selectors.priceSelector, selectorProbe, ...diag },
+          'DIAG: Property page price element not found — wrong page loaded or price selector outdated',
+        );
+        throw err;
+      }
 
       // Check for blocks on the result page
       const blockedOnResult = await this.detectBlock(page);
@@ -126,7 +159,8 @@ export abstract class BaseScraper implements Scraper {
       return result;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.logger.error({ site, address, err: message }, 'Scrape failed with error');
+      const diag = page ? await this.getPageDiagnostics(page).catch(() => null) : null;
+      this.logger.error({ site, address, err: message, ...(diag ?? {}) }, 'Scrape failed with error');
       if (page) {
         await this.screenshotOnDebug(page, 'error');
       }
@@ -176,6 +210,43 @@ export abstract class BaseScraper implements Scraper {
     await page
       .screenshot({ path: `debug-${safeName}-${label}-${ts}.png` })
       .catch(() => {});
+  }
+
+  /**
+   * Snapshot current page state for diagnostic logging.
+   */
+  protected async getPageDiagnostics(
+    page: Page,
+  ): Promise<{ url: string; pageTitle: string; bodySnippet: string }> {
+    const url = page.url();
+    const pageTitle = await page.title().catch(() => '(error)');
+    const bodySnippet = await page
+      .evaluate(() => (document.body?.innerText ?? '').slice(0, 600))
+      .catch(() => '(error)');
+    return { url, pageTitle, bodySnippet };
+  }
+
+  /**
+   * For each comma-separated alternative in a compound selector, report whether
+   * it matches at least one element — helps pinpoint which alternatives are stale.
+   */
+  protected async probeSelector(
+    page: Page,
+    selector: string,
+  ): Promise<Record<string, boolean>> {
+    const alternatives = selector
+      .split(',')
+      .map((s) => s.split('>>')[0].trim())
+      .filter(Boolean);
+    const results: Record<string, boolean> = {};
+    for (const alt of alternatives) {
+      try {
+        results[alt] = (await page.$(alt)) !== null;
+      } catch {
+        results[alt] = false;
+      }
+    }
+    return results;
   }
 
   /**

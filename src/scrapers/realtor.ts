@@ -38,18 +38,39 @@ export class RealtorScraper extends BaseScraper {
   };
 
   protected async extractData(page: Page): Promise<ScrapeResult> {
+    const site = this.name;
+    const url = page.url();
+
     // JSON-LD first strategy
     const jsonLd = await this.extractJsonLd(page);
     if (jsonLd) {
+      const types = jsonLd
+        .map((item) => (item as Record<string, unknown>)?.['@type'])
+        .filter(Boolean);
+      this.logger.info({ site, url, count: jsonLd.length, types }, 'DIAG: JSON-LD scripts found');
       const result = this.parseJsonLd(jsonLd);
-      if (result) return result;
+      if (result) {
+        this.logger.info({ site, url, strategy: 'json-ld' }, 'Extracted data via JSON-LD');
+        return result;
+      }
+      this.logger.warn(
+        { site, url, types },
+        'DIAG: JSON-LD found but no SingleFamilyResidence/Residence/Product type — falling through',
+      );
+    } else {
+      this.logger.warn({ site, url }, 'DIAG: No JSON-LD scripts found on page');
     }
 
     // Try __NEXT_DATA__ / __PRELOADED_STATE__ extraction
     const nextDataResult = await this.extractFromNextData(page);
-    if (nextDataResult) return nextDataResult;
+    if (nextDataResult) {
+      this.logger.info({ site, url, strategy: 'next-data' }, 'Extracted data via __NEXT_DATA__');
+      return nextDataResult;
+    }
+    this.logger.warn({ site, url }, 'DIAG: __NEXT_DATA__ extraction returned nothing');
 
     // Fallback: DOM scraping
+    this.logger.info({ site, url, strategy: 'dom' }, 'Falling back to DOM scraping');
     return this.extractFromDom(page);
   }
 
@@ -278,6 +299,18 @@ export class RealtorScraper extends BaseScraper {
 
     if (Object.keys(details).length > 0) {
       result.details = details;
+    }
+
+    // Warn with selector probe when no price found — gives Claude Code enough to fix the selector
+    if (!result.estimatedPrice) {
+      const probe = {
+        estimate: await this.probeSelector(page, SELECTORS.estimate),
+        price: await this.probeSelector(page, SELECTORS.price),
+      };
+      this.logger.warn(
+        { site: this.name, url: page.url(), selectorProbe: probe },
+        'DIAG: DOM scraping found no price — check these selector alternatives',
+      );
     }
 
     // Price history

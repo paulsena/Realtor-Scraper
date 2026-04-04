@@ -12,7 +12,8 @@ export async function getBrowser(): Promise<Browser> {
 
   browserInstance = await chromium.launch({
     channel: 'chrome',
-    headless: true,
+    headless: false,
+    ignoreDefaultArgs: ['--enable-automation'],
     args: [
       '--disable-blink-features=AutomationControlled',
       '--webrtc-ip-handling-policy=default_public_interface_only',
