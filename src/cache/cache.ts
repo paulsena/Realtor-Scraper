@@ -28,7 +28,11 @@ export class Cache {
     const age = Date.now() - row.created_at;
     if (age > this.ttlMs) return null;
 
-    return JSON.parse(row.results) as unknown;
+    try {
+      return JSON.parse(row.results) as unknown;
+    } catch {
+      return null;
+    }
   }
 
   /** Upsert a cache entry with the current timestamp. */
