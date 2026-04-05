@@ -4,8 +4,8 @@ import type { ScrapeResult } from './types.js';
 import type pino from 'pino';
 
 const SELECTORS = {
-  // My Home Value page has a dedicated "Enter your address" input
-  searchBox: 'input[placeholder="Enter your address"], input#search-box-input',
+  // My Home Value page: placeholder is unique to the main form input (not header nav search boxes)
+  searchBox: 'input[placeholder="Enter your address"]',
   autocompleteResult:
     '.item-row.clickable >> nth=0',
   // My Home Value estimate page price
@@ -38,7 +38,7 @@ export class RedfinScraper extends BaseScraper {
   readonly landingUrl = 'https://www.redfin.com/what-is-my-home-worth';
   protected readonly selectors: ScraperSelectors = {
     searchBox: SELECTORS.searchBox,
-    submitButton: 'button:has-text("Next"), button[data-rf-test-id="submit-button"], button[type="submit"]',
+    submitButton: 'button.button.Button.primary, button:has-text("Next")',
     priceSelector: SELECTORS.price,
   };
 

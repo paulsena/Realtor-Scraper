@@ -40,46 +40,88 @@ export class ScraperService {
     const startTime = Date.now();
     const normalized = normalizeAddress(address);
 
-    // Cache hit — return immediately
+    if (this.scrapers.length === 0) {
+      return { address: normalized, cached: false, durationMs: 0, results: {} };
+    }
+
     const cached = this.cache.get(normalized) as Record<string, ScrapeResult> | null;
+
     if (cached) {
-      this.logger.info({ address: normalized }, 'Cache hit — returning cached result');
-      for (const site of Object.keys(cached)) {
+      // Identify providers with non-success results that need a fresh attempt
+      const staleScrapers = this.scrapers.filter((s) => cached[s.name]?.status !== 'success');
+
+      if (staleScrapers.length === 0) {
+        // All providers succeeded in cache — return immediately
+        this.logger.info({ address: normalized }, 'Cache hit — all providers successful');
+        for (const site of Object.keys(cached)) {
+          scrapeRequestsTotal.labels(site, 'cached').inc();
+        }
+        return {
+          address: normalized,
+          cached: true,
+          durationMs: Date.now() - startTime,
+          results: cached,
+        };
+      }
+
+      // Partial cache hit — good providers served from cache, stale ones re-scraped
+      const goodSites = this.scrapers
+        .filter((s) => !staleScrapers.includes(s))
+        .map((s) => s.name);
+      this.logger.info(
+        { address: normalized, cached: goodSites, refreshing: staleScrapers.map((s) => s.name) },
+        'Partial cache hit — refreshing stale providers',
+      );
+      for (const site of goodSites) {
         scrapeRequestsTotal.labels(site, 'cached').inc();
       }
-      return {
-        address: normalized,
-        cached: true,
-        durationMs: Date.now() - startTime,
-        results: cached,
-      };
+
+      const freshResults = await this.runScrapers(staleScrapers, normalized);
+      const merged = { ...cached, ...freshResults };
+
+      const hasSuccess = Object.values(merged).some((r) => r.status === 'success');
+      if (hasSuccess) {
+        this.cache.set(normalized, merged);
+      }
+
+      const durationMs = Date.now() - startTime;
+      const summary = Object.fromEntries(Object.entries(merged).map(([k, v]) => [k, v.status]));
+      this.logger.info({ address: normalized, durationMs, results: summary }, 'Partial refresh finished');
+
+      return { address: normalized, cached: false, durationMs, results: merged };
     }
 
-    // No scrapers configured — return empty
-    if (this.scrapers.length === 0) {
-      return {
-        address: normalized,
-        cached: false,
-        durationMs: Date.now() - startTime,
-        results: {},
-      };
+    // Full scrape — nothing cached
+    this.logger.info({ address: normalized, sites: this.scrapers.map((s) => s.name).join(', ') }, 'Starting scrape');
+    const results = await this.runScrapers(this.scrapers, normalized);
+
+    const durationMs = Date.now() - startTime;
+    const summary = Object.fromEntries(Object.entries(results).map(([k, v]) => [k, v.status]));
+    this.logger.info({ address: normalized, durationMs, results: summary }, 'Scrape finished');
+
+    const hasSuccess = Object.values(results).some((r) => r.status === 'success');
+    if (hasSuccess) {
+      this.cache.set(normalized, results);
     }
 
-    const sites = this.scrapers.map((s) => s.name).join(', ');
-    this.logger.info({ address: normalized, sites }, 'Starting scrape');
+    return { address: normalized, cached: false, durationMs, results };
+  }
 
-    // Parallel scrape with hard ceiling
+  private async runScrapers(
+    scrapers: Scraper[],
+    address: string,
+  ): Promise<Record<string, ScrapeResult>> {
     const scrapeAll = async (): Promise<Record<string, ScrapeResult>> => {
       const settled = await Promise.allSettled(
-        this.scrapers.map((scraper) =>
-          this.scrapeWithRetry(scraper, normalized, this.config.scrapeTimeoutMs),
+        scrapers.map((scraper) =>
+          this.scrapeWithRetry(scraper, address, this.config.scrapeTimeoutMs),
         ),
       );
 
       const results: Record<string, ScrapeResult> = {};
-      for (let i = 0; i < this.scrapers.length; i++) {
+      for (let i = 0; i < scrapers.length; i++) {
         const outcome = settled[i]!;
-        const site = this.scrapers[i]!.name;
+        const site = scrapers[i]!.name;
         if (outcome.status === 'fulfilled') {
           results[site] = outcome.value;
         } else {
@@ -94,35 +136,16 @@ export class ScraperService {
       setTimeout(() => reject(new Error('REQUEST_TIMEOUT')), this.config.requestTimeoutMs);
     });
 
-    let results: Record<string, ScrapeResult>;
     try {
-      results = await Promise.race([scrapeAll(), timeoutPromise]);
+      return await Promise.race([scrapeAll(), timeoutPromise]);
     } catch {
-      results = {};
-      for (const scraper of this.scrapers) {
+      const results: Record<string, ScrapeResult> = {};
+      for (const scraper of scrapers) {
         results[scraper.name] = { status: 'timeout', error: 'Request timeout exceeded' };
         scrapeRequestsTotal.labels(scraper.name, 'timeout').inc();
       }
+      return results;
     }
-
-    const durationMs = Date.now() - startTime;
-    const summary = Object.fromEntries(
-      Object.entries(results).map(([site, r]) => [site, r.status]),
-    );
-    this.logger.info({ address: normalized, durationMs, results: summary }, 'Scrape finished');
-
-    // Cache only if at least one scraper succeeded
-    const hasSuccess = Object.values(results).some((r) => r.status === 'success');
-    if (hasSuccess) {
-      this.cache.set(normalized, results);
-    }
-
-    return {
-      address: normalized,
-      cached: false,
-      durationMs,
-      results,
-    };
   }
 
   private async scrapeWithRetry(
@@ -156,7 +179,14 @@ export class ScraperService {
         void acquired.context.close().catch(() => {});
         await this.delay(RETRY_DELAY_MS);
 
-        acquired = await this.pool.acquire(site);
+        try {
+          acquired = await this.pool.acquire(site);
+        } catch (acquireErr) {
+          scrapeRequestsTotal.labels(site, 'error').inc();
+          timer();
+          activeScrapes.dec();
+          return { status: 'error', error: String(acquireErr) };
+        }
         try {
           const retryResult = await scraper.scrape(acquired.context, address, timeoutMs, acquired.landingPage);
           scrapeRequestsTotal.labels(site, retryResult.status).inc();
@@ -185,7 +215,14 @@ export class ScraperService {
       void acquired.context.close().catch(() => {});
       await this.delay(RETRY_DELAY_MS);
 
-      acquired = await this.pool.acquire(site);
+      try {
+        acquired = await this.pool.acquire(site);
+      } catch (acquireErr) {
+        scrapeRequestsTotal.labels(site, 'error').inc();
+        timer();
+        activeScrapes.dec();
+        return { status: 'error', error: String(acquireErr) };
+      }
       try {
         const retryResult = await scraper.scrape(acquired.context, address, timeoutMs, acquired.landingPage);
         scrapeRequestsTotal.labels(site, retryResult.status).inc();

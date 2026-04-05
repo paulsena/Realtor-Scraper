@@ -27,6 +27,7 @@ const COOKIE_BANNER_SELECTORS = [
   'button[aria-label*="Accept"]',
   'button[data-testid*="cookie"]',
   '#onetrust-accept-btn-handler',
+  'button:has-text("Allow All")',
   'button.accept-cookies',
 ];
 

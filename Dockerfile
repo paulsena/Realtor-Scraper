@@ -16,6 +16,7 @@ FROM node:22-bookworm-slim
 # Chrome dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     xvfb \
+    xauth \
     dumb-init \
     wget \
     gnupg \
