@@ -18,6 +18,7 @@ const CAPTCHA_INDICATORS = [
   'div[id*="captcha"]',
   'div[class*="captcha"]',
   '#px-captcha',
+  '.px-captcha-container',
   '#cf-challenge-running',
 ];
 
@@ -117,6 +118,13 @@ export abstract class BaseScraper implements Scraper {
         try {
           await page.waitForSelector(this.selectors.priceSelector, { timeout: 15000 });
         } catch (err) {
+          // Captcha may have appeared after initial page load — re-check before logging as error
+          const blockedLate = await this.detectBlock(page);
+          if (blockedLate) {
+            this.logger.warn({ site, address }, 'Bot detection triggered while waiting for price selector');
+            await this.screenshotOnDebug(page, 'blocked-late');
+            return { status: 'blocked', error: 'Bot detection triggered while waiting for price (PX captcha)' };
+          }
           const msg = err instanceof Error ? err.message : String(err);
           const diag = await this.getPageDiagnostics(page);
           const selectorProbe = await this.probeSelector(page, this.selectors.priceSelector);
@@ -250,6 +258,7 @@ export abstract class BaseScraper implements Scraper {
       if (
         lc.includes('access to this page has been denied') ||
         lc.includes('access denied') ||
+        lc.includes('before we continue') ||
         lc.includes('error: the request could not be satisfied') ||
         lc === '403 error' ||
         lc === '403'
